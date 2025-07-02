@@ -28,46 +28,6 @@ def structure_loss(pred, mask):
     return (wbce + wiou).mean()
 
 
-def train(train_loader, model, optim, epoch, opt, total_step, writer):
-    total_loss = 0
-    model.train()
-    for step, data in enumerate(train_loader):
-
-        imgs, gts = data
-        imgs = imgs.cuda()
-        gts = gts.cuda()
-        input_fea = imgs #concatenate
-
-        optim.zero_grad()
-        stage_pre, pre = model(input_fea)
-        stage_loss_list = [structure_loss(out, gts) for out in stage_pre]
-        stage_loss = 0
-        gamma = 0.2
-        for iteration in range(len(stage_pre)):
-            stage_loss += (gamma * iteration) * stage_loss_list[iteration]
-
-        map_loss = structure_loss(pre, gts)
-        loss = stage_loss + map_loss
-        loss.backward()
-        clip_gradient(optimizer, opt.clip)
-        optim.step()
-
-        total_loss += loss
-
-        if step % 20 == 0 or step == total_step:
-            print(
-                '[{}] => [Epoch Num: {:03d}/{:03d}] => [Global Step: {:04d}/{:04d}] => [Loss: {:0.4f}]'.
-                format(datetime.now(), epoch, opt.epoch, step, total_step, loss.item()))
-            logging.info(
-                '#TRAIN#:Epoch [{:03d}/{:03d}], Step [{:04d}/{:04d}], Loss: {:0.4f}'.
-                format(epoch, opt.epoch, step, total_step, loss.item()))
-
-    writer.add_scalar("Train_Loss", total_loss, global_step=epoch)
-
-    save_path = opt.save_path
-    if epoch % opt.epoch_save == 0:
-        torch.save(model.state_dict(), save_path + str(epoch) + '_DCNet.pth')
-
 
 def val(val_loader, model, epoch, save_path, writer):
     global best_mae, best_epoch
