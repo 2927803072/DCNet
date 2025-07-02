@@ -9,7 +9,6 @@ from utils.dataloader import test_dataset
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--testsize', type=int, default=704, help='testing size default 352')
-parser.add_argument('--pth_path', type=str, default='./Snapshot/DCNet/Best_DCNet/DCNet_best.pth')
 opt = parser.parse_args()
 
 # for _data_name in ['CAMO', 'COD10K', 'CHAMELEON',NC4K]:
