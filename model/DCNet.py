@@ -154,20 +154,6 @@ class ChannelAttention(nn.Module):
         return self.sigmoid(out)
 
 
-class SpatialAttention(nn.Module):
-    def __init__(self, kernel_size=7):
-        super(SpatialAttention, self).__init__()
-
-        self.conv1 = nn.Conv2d(2, 1, kernel_size, padding=kernel_size // 2, bias=False)
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x):
-        avg_out = torch.mean(x, dim=1, keepdim=True)
-        max_out, _ = torch.max(x, dim=1, keepdim=True)
-        x = torch.cat([avg_out, max_out], dim=1)
-        x = self.conv1(x)
-        return self.sigmoid(x)
-
 
 
 def INF(B, H, W, device):
@@ -214,18 +200,6 @@ class CrissCrossAttention(nn.Module):
 
         return self.gamma * (out_H + out_W) + x
 
-class CBAM(nn.Module):
-    def __init__(self, in_channel, reduction_ratio=16):
-        super(CBAM, self).__init__()
-        self.ChannelGate = ChannelAttention(in_channel, reduction_ratio)
-        self.SpatialGate = SpatialAttention()
-
-    def forward(self, x):
-        channel_att = self.ChannelGate(x)
-        x = channel_att * x
-        spatial_att = self.SpatialGate(x)
-        x = spatial_att * x
-        return x
 
 # Cross-modal Fusion
 class CFF(nn.Module):
@@ -309,42 +283,6 @@ class iAFF(nn.Module):
 		z = x * m2 + y * (1-m2)
 		return z
     
-class LA(nn.Module):
-	def __init__(self, channels, r=16):
-		super(LA, self).__init__()
-		inter_channels = int(channels // r)
-
-		self.local_attention = nn.Sequential(
-			nn.Conv2d(channels, inter_channels, kernel_size=1, stride=1, padding=0),
-			nn.BatchNorm2d(inter_channels),
-		#	nn.ReLU(inplace=True),
-                        nn.SiLU(),
-			nn.Conv2d(inter_channels, channels, kernel_size=1, stride=1, padding=0),
-			nn.BatchNorm2d(channels),
-			nn.Sigmoid(),
-		)
-		self.global_attention = nn.Sequential(
-			nn.AdaptiveAvgPool2d(1),
-			nn.Conv2d(channels, inter_channels, kernel_size=1, stride=1, padding=0),
-			nn.BatchNorm2d(inter_channels),
-		#	nn.ReLU(inplace=True),
-                        nn.SiLU(),
-			nn.Conv2d(inter_channels, channels, kernel_size=1, stride=1, padding=0),
-			nn.BatchNorm2d(channels),
-			nn.Sigmoid(),
-		)
-		self.sigmoid = nn.Sigmoid()
-
-	def forward(self, x):
-		"""
-		Implimenting the iAFF forward step
-		"""
-		x_la = self.local_attention(x)
-		x_ga = self.global_attention(x)
-		res = self.sigmoid(x_la + x_ga)
-		out = res * x
-		return out
-
 
 
 class GNG(nn.Module):
@@ -386,71 +324,6 @@ class CALayer(nn.Module):
         y = self.conv_du(y)
         return x * y
 
-class GAR(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=1, bias=False):
-        super(GAR, self).__init__()
-        self.gate_conv = nn.Sequential(
-            nn.BatchNorm2d(in_channels+1),
-            nn.Conv2d(in_channels+1, in_channels+1, 1),
-            nn.ReLU(),
-            nn.Conv2d(in_channels+1, 1, 1),
-            nn.BatchNorm2d(1),
-            nn.Sigmoid()
-        )
-        self.out_cov = nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, bias=bias)
-
-    def forward(self, in_feat, gate_feat):
-        attention_map = self.gate_conv(torch.cat([in_feat, gate_feat], dim=1))
-        in_feat = (in_feat * (attention_map + 1))
-        out_feat = self.out_cov(in_feat)
-        return out_feat
-
-
-class LVB(nn.Module):
-    def __init__(self, in_channels, reduction, kernel_size, bias, act):
-        super(LVB, self).__init__()
-        modules_body = []
-        modules_body.append(conv(in_channels, in_channels, kernel_size, bias=bias))
-        modules_body.append(act)
-        modules_body.append(conv(in_channels, in_channels, kernel_size, bias=bias))
-
-        self.CA = CALayer(in_channels, reduction, bias=bias)
-        self.body = nn.Sequential(*modules_body)
-        self.la = LA(in_channels , r = 16)
-        self.cc_attention = CrissCrossAttention(in_channels)
-        self.outconv = BasicConv2d(2 * in_channels, in_channels, 3) ####1->3
-        self.sigmoid = nn.Sigmoid()
-    # def forward(self, x):
-    #     xla = self.la(x)
-    #     xga = self.cc_attention(x)
-    #     cat = torch.cat((xla, xga), dim=1)
-    #     res = self.outconv(cat)
-    #     res = self.CA(res)
-    #     out = res + x
-
-    #     return out
-    def forward(self, x):
-        xc = self.body(x)
-        xla = self.la(xc)
-        xga = self.cc_attention(xc)
-        cat = torch.cat((xla, xga), dim=1)
-        res = self.outconv(cat)
-        res = self.CA(res)
-        out = res + x
-
-        return out   
-
-class LVD(nn.Module):
-    def __init__(self, channel, kernel_size, reduction, bias, act, n_resblocks):
-        super(LVD, self).__init__()
-        modules_body = [LVB(channel, kernel_size, reduction, bias=bias, act=act) for _ in range(n_resblocks)]
-        modules_body.append(conv(channel, channel, kernel_size))
-        self.body = nn.Sequential(*modules_body)
-
-    def forward(self, x):
-        res = self.body(x)
-        res += x
-        return res
 
 
 
